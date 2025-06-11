@@ -81,20 +81,39 @@ export default async function handler(req, res) {
     const replyMessage = `🎉🎊 恭喜你获得折扣卷 RM100.00 🎉🎊\n🎉🎉 Congratulations! You’ve won a RM100 discount voucher! 🎉🎉\n⚠️⚠️ 只限今天直播兑现，逾期无效 ⚠️⚠️\n⚠️⚠️ Valid only during today’s live stream. ⚠️⚠️\n❌❌ 不得转让 ❌❌\n❌❌ Non-transferable ❌❌`;
     const results = [];
 
+    // 延迟函数
+    function delay(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    // 安全节流留言回复
     for (const winner of winners) {
-      const replyRes = await fetch(`https://graph.facebook.com/${winner.commentId}/comments?access_token=${PAGE_TOKEN}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: replyMessage })
-      });
-      const replyData = await replyRes.json();
-      results.push({
-        number: winner.number,
-        commentId: winner.commentId,
-        originalMessage: winner.message,
-        from: winner.from,
-        replyStatus: replyData
-      });
+      try {
+        const replyRes = await fetch(`https://graph.facebook.com/${winner.commentId}/comments?access_token=${PAGE_TOKEN}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: replyMessage })
+        });
+        const replyData = await replyRes.json();
+        results.push({
+          number: winner.number,
+          commentId: winner.commentId,
+          originalMessage: winner.message,
+          from: winner.from,
+          replyStatus: replyData
+        });
+        await delay(3000); // 每条留言间隔 3 秒
+      } catch (err) {
+        results.push({
+          number: winner.number,
+          commentId: winner.commentId,
+          originalMessage: winner.message,
+          from: winner.from,
+          replyStatus: { error: err.message }
+        });
+        console.warn('留言失败，已跳过：', err.message);
+        await delay(3000);
+      }
     }
 
     const list = winners.map(w => {
