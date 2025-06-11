@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lucky Draw</title>
+  <link rel="icon" href="favicon.ico" type="image/x-icon" />
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background-color: #fff;
+      text-align: center;
+      padding-top: 50px;
+    }
+    img {
+      width: 120px;
+      height: auto;
+    }
+    button {
+      margin-top: 30px;
+      padding: 15px 30px;
+      font-size: 18px;
+      border: none;
+      border-radius: 8px;
+      background-color: #f04f4f;
+      color: white;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #c63d3d;
+    }
+  </style>
+</head>
+<body>
+  <img src="favicon.ico" alt="App Icon" />
+  <h2>🎉 幸运抽奖系统 🎉</h2>
+  <button onclick="window.location.href='/api/draw'">✨ 开始抽奖 ✨</button>
+</body>
+</html>
