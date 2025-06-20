@@ -1,109 +1,77 @@
-import { initializeApp, cert, getApps } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
-
-const serviceAccount = JSON.parse(process.env.FIREBASE_ADMIN_KEY);
-
-if (!getApps().length) {
-  initializeApp({ credential: cert(serviceAccount) });
-}
-
-const db = getFirestore();
-
 export default async function handler(req, res) {
   const PAGE_ID = process.env.PAGE_ID;
   const PAGE_TOKEN = process.env.FB_ACCESS_TOKEN;
+  const DEBUG = req.query.debug !== undefined;
 
   try {
-    // 获取最新贴文 ID
+    // 取得最新贴文 ID
     const postRes = await fetch(`https://graph.facebook.com/${PAGE_ID}/posts?access_token=${PAGE_TOKEN}&limit=1`);
     const postData = await postRes.json();
-    const post_id = postData?.data?.[0]?.id;
+    const postId = postData?.data?.[0]?.id;
+    if (!postId) return res.status(404).json({ error: '无法取得贴文 ID' });
 
-    if (!post_id) {
-      return res.status(404).json({ error: '无法取得贴文 ID', raw: postData });
+    // 取得所有留言
+    let allComments = [], next = `https://graph.facebook.com/${postId}/comments?access_token=${PAGE_TOKEN}&fields=id,message,from&limit=100`;
+    while (next) {
+      const res = await fetch(next);
+      const json = await res.json();
+      allComments.push(...(json.data || []));
+      next = json.paging?.next || null;
     }
 
-    // 获取所有留言
-    const allComments = [];
-    let nextPage = `https://graph.facebook.com/${post_id}/comments?access_token=${PAGE_TOKEN}&fields=id,message,from&limit=100`;
-
-    while (nextPage) {
-      const resp = await fetch(nextPage);
-      const data = await resp.json();
-      allComments.push(...(data.data || []));
-      nextPage = data.paging?.next || null;
-    }
-
-    // 过滤有效留言（留言包含 1~99 数字，且不是管理员自己）
+    // 过滤包含 01~99 数字的留言
     const regex = /([1-9][0-9]?)/;
-    const entries = [];
+    const valid = [];
+    const seenUsers = new Set();
+    const seenNumbers = new Set();
 
     for (const c of allComments) {
-      const msg = c.message || '';
-      const match = msg.match(regex);
-      const userId = c.from?.id;
-      const userName = c.from?.name;
+      if (!c.message || !regex.test(c.message)) continue;
+      const number = c.message.match(regex)[1].padStart(2, '0');
+      const uid = c.from?.id || c.id;
+      if (seenUsers.has(uid) || seenNumbers.has(number)) continue;
+      seenUsers.add(uid);
+      seenNumbers.add(number);
+      valid.push({ commentId: c.id, number, from: c.from, message: c.message });
+      if (valid.length >= 3) break;
+    }
 
-      if (!match || userId === PAGE_ID) continue;
-
-      const number = match[1].padStart(2, '0');
-
-      entries.push({
-        comment_id: c.id,
-        user_id: userId || '',
-        user_name: userName || '',
-        message: msg,
-        number,
+    if (valid.length < 3) {
+      return res.status(400).json({
+        error: '有效留言不足 3 个不同人或号码',
+        total: allComments.length
       });
     }
 
-    // 随机抽取 3 个不同 user_id + number
-    const winners = [];
-    const usedUserIds = new Set();
-    const usedNumbers = new Set();
-
-    function shuffle(arr) {
-      for (let i = arr.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [arr[i], arr[j]] = [arr[j], arr[i]];
-      }
-      return arr;
-    }
-
-    for (const entry of shuffle(entries)) {
-      if (!usedUserIds.has(entry.user_id) && !usedNumbers.has(entry.number)) {
-        winners.push(entry);
-        usedUserIds.add(entry.user_id);
-        usedNumbers.add(entry.number);
-        if (winners.length === 3) break;
-      }
-    }
-
-    if (winners.length < 3) {
-      return res.status(400).json({ error: '有效留言不足 3 个不同人或号码', total: entries.length });
-    }
-
-    // 写入 Firestore lucky_draw_results
-    const timestamp = new Date();
-
-    for (const winner of winners) {
-      await db.collection('lucky_draw_results').add({
-        ...winner,
-        post_id,
-        timestamp,
+    // 回复中奖者
+    const replyText = `🎉🎊 恭喜你获得折扣卷 RM100.00 🎊🎉\n⚠️ 只限今天直播兑现，逾期无效 ⚠️`;
+    for (const winner of valid) {
+      await fetch(`https://graph.facebook.com/${winner.commentId}/comments?access_token=${PAGE_TOKEN}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: replyText })
       });
+      await new Promise(r => setTimeout(r, 3000));
     }
 
-    return res.status(200).json({
-      success: true,
-      post_id,
-      winners,
-      total: entries.length,
-      message: '抽奖完成并写入 Firebase',
+    const resultText = valid.map(w =>
+      w.from?.id && w.from?.name
+        ? `@[\`${w.from.id}\`](${w.from.name}) 留言 ${w.number}`
+        : `匿名留言 ${w.number}`
+    ).join('\n');
+
+    const summary = `🎊 本场直播抽奖结果 🎊\n系统已自动回复中奖者：\n${resultText}\n⚠️ 请查看你的号码下是否有回复！⚠️`;
+
+    await fetch(`https://graph.facebook.com/${postId}/comments?access_token=${PAGE_TOKEN}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: summary })
     });
 
+    return res.status(200).json({ success: true, winners: valid });
+
   } catch (err) {
-    console.error('[draw.js] 抽奖失败', err);
-    return res.status(500).json({ error: '服务器错误', message: err.message });
+    console.error(err);
+    return res.status(500).json({ error: '服务器错误', details: err.message });
   }
 }
