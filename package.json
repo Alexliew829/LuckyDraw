@@ -1,1 +1,12 @@
-npm install firebase-admin
+{
+  "name": "lucky-draw",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "firebase-admin": "^11.11.0"
+  }
+}
