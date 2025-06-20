@@ -1,12 +1,13 @@
 {
   "name": "lucky-draw",
   "version": "1.0.0",
+  "type": "module",
+  "main": "index.js",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start"
+    "start": "echo 'No build needed'"
   },
   "dependencies": {
-    "firebase-admin": "^11.11.0"
+    "firebase-admin": "^11.11.0",
+    "node-fetch": "^3.3.2"
   }
 }
