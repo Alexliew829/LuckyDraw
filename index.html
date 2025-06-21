@@ -1,31 +1,19 @@
 <!DOCTYPE html>
 <html lang="zh">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>幸运抽奖</title>
   <link rel="icon" href="/favicon.ico" />
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-title" content="幸运抽奖" />
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="幸运抽奖">
   <style>
     body {
       background: #f8f8f8;
       text-align: center;
-      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-      margin: 0;
-      padding: 0;
-    }
-    #start-page {
-      width: 100vw;
-      height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    #draw-page {
-      display: none;
       padding-top: 80px;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
     }
     button {
       font-size: 24px;
@@ -39,28 +27,15 @@
   </style>
 </head>
 <body>
-  <!-- 初始页：点击任意位置进入抽奖按钮页 -->
-  <div id="start-page" onclick="enterDrawPage()">
-    <h2>📱 请点击画面进入抽奖按钮页面</h2>
-  </div>
-
-  <!-- 抽奖按钮页（样式与旧版一致） -->
-  <div id="draw-page">
-    <img src="/apple-touch-icon.png" alt="幸运图标" width="120" style="border-radius: 24px;"><br><br>
-    <h2>点击按钮启动幸运抽奖</h2>
-    <button onclick="startDraw()">🎉 开始抽奖</button>
-  </div>
+  <img src="/apple-touch-icon.png" alt="幸运图标" width="120" style="border-radius: 24px;"><br><br>
+  <h2>点击按钮启动幸运抽奖</h2>
+  <button onclick="startDraw()">🎉 开始抽奖</button>
 
   <script>
-    function enterDrawPage() {
-      document.getElementById('start-page').style.display = 'none';
-      document.getElementById('draw-page').style.display = 'block';
-    }
-
     function startDraw() {
       const hasDrawn = localStorage.getItem('drawn');
       if (hasDrawn) {
-        const confirmDraw = confirm("⚠️ 已抽奖一次，确认要再抽奖吗？");
+        const confirmDraw = confirm("⚠️ 已抽奖一次，是否确认再次抽奖？");
         if (!confirmDraw) return;
       }
       localStorage.setItem('drawn', 'yes');
