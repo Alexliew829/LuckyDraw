@@ -29,13 +29,14 @@
 <body>
   <img src="/apple-touch-icon.png" alt="幸运图标" width="120" style="border-radius: 24px;"><br><br>
   <h2>点击按钮启动幸运抽奖</h2>
-  <button onclick="startDraw()">🎉 开始抽奖</button>
+  <button id="drawButton">🎉 开始抽奖</button>
 
   <script>
     const DRAW_URL = "https://lucky-draw-delta-two.vercel.app/api/draw";
     const DRAW_KEY = "lastDrawTime";
+    const button = document.getElementById("drawButton");
 
-    function startDraw() {
+    button.addEventListener("click", async () => {
       const lastTime = localStorage.getItem(DRAW_KEY);
       const now = Date.now();
       const sixHours = 6 * 60 * 60 * 1000;
@@ -47,8 +48,25 @@
 
       // 更新抽奖时间
       localStorage.setItem(DRAW_KEY, now);
-      window.location.href = DRAW_URL;
-    }
+      button.disabled = true;
+      button.innerText = "抽奖中...";
+
+      try {
+        const res = await fetch(DRAW_URL);
+        const result = await res.json();
+
+        if (result.success) {
+          alert("🎉 抽奖完成，系统将自动回复中奖者");
+        } else {
+          alert("❌ 抽奖失败：" + (result.message || "请稍后重试"));
+        }
+      } catch (err) {
+        alert("⚠️ 网络错误，无法抽奖");
+      }
+
+      button.disabled = false;
+      button.innerText = "🎉 开始抽奖";
+    });
   </script>
 </body>
 </html>
