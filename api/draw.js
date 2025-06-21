@@ -1,4 +1,3 @@
-// pages/api/draw.js
 import fetch from 'node-fetch';
 
 const PAGE_ID = process.env.PAGE_ID;
@@ -16,7 +15,7 @@ export default async function handler(req, res) {
     return res.status(404).json({ success: false, message: '❌ 无法取得最新贴文 ID' });
   }
 
-  // 是否已经抽奖过（仅记录内存）
+  // 判断是否已抽奖
   const key = `drawn-${postId}`;
   const cache = global.drawnCache ||= {};
   const hasDrawn = cache[key];
@@ -27,28 +26,19 @@ export default async function handler(req, res) {
   const commentData = await commentRes.json();
   const comments = commentData?.data || [];
 
-  if (isDebug) {
-    const allMsgs = comments.map(c => ({
-      id: c.id,
-      from: c.from?.name || '(无名)',
-      msg: c.message,
-      uid: c.from?.id || null,
-    }));
-    return res.status(200).json({ success: true, total: allMsgs.length, comments: allMsgs });
-  }
-
-  // 提取有效留言（01~99）
+  // 筛选有效留言（01~99），排除主页与匿名
   const candidates = [];
   const numberSet = new Set();
   const userSet = new Set();
 
   for (const c of comments) {
-    if (c.from?.id === PAGE_ID) continue; // 跳过主页账号
     const msg = c.message;
-    const match = msg?.match(/\b(0?[1-9]|[1-9][0-9])\b/); // 支持01~99
+    if (!msg || !c.from || c.from.id === PAGE_ID) continue;
+
+    const match = msg.match(/\b(?:[AaBb]?\s*0?[1-9]|[AaBb]?\s*[1-9][0-9])\b/);
     if (!match) continue;
 
-    const number = parseInt(match[0], 10);
+    const number = parseInt(match[0].replace(/[^0-9]/g, ''), 10);
     if (number < 1 || number > 99) continue;
 
     const uid = c.from?.id;
@@ -64,7 +54,7 @@ export default async function handler(req, res) {
     });
   }
 
-  // 随机抽奖（不同人不同号码）
+  // 随机抽奖（不同人、不同号码）
   const winners = [];
   while (winners.length < 3 && candidates.length) {
     const i = Math.floor(Math.random() * candidates.length);
@@ -85,18 +75,32 @@ export default async function handler(req, res) {
     });
   }
 
-  const list = winners.map(w => `@[${w.user_id}](${w.user_name}) ${w.number}`).join('\n');
-  const reply = `🎉🎊 本场直播抽奖结果 🎉🎊\n系统已自动回复得奖者：\n${list}\n⚠️⚠️ 只限今天直播兑现，逾期无效 ⚠️⚠️`;
+  // 回复每位中奖者
+  const replyMessage = `🎉🎊 恭喜你获得折扣卷 RM100.00 🎉🎊\n🎉🎉 Congratulations! You’ve won a RM100 discount voucher! 🎉🎉\n⚠️⚠️ 只限今天直播兑现，逾期无效 ⚠️⚠️\n⚠️⚠️ Valid only during today’s live stream. ⚠️⚠️\n❌❌ 不得转让 ❌❌\n❌❌ Non-transferable ❌❌`;
+
+  for (const w of winners) {
+    await fetch(`https://graph.facebook.com/${w.comment_id}/comments?access_token=${ACCESS_TOKEN}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: replyMessage }),
+    });
+  }
+
+  // 公布得奖名单（显示名字 + 号码）
+  const summaryList = winners.map(w => `${w.user_name} ${w.number}`).join('\n');
+  const summary = `🎉🎊 本场直播抽奖结果 🎉🎊  \n系统已自动回复中奖者：  \n\n${summaryList}\n\n⚠️ 请查看你的号码下是否有回复！⚠️  \n⚠️ 只限今天直播兑现，逾期无效 ⚠️`;
 
   await fetch(`https://graph.facebook.com/${postId}/comments?access_token=${ACCESS_TOKEN}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message: reply }),
+    body: JSON.stringify({ message: summary }),
   });
 
   return res.status(200).json({
     success: true,
-    message: hasDrawn ? '⚠️ 本场直播已抽过奖，此次为重复测试' : '✅ 抽奖完成，已公布中奖名单',
+    message: hasDrawn
+      ? '⚠️ 本场直播已抽过奖，此次为重复测试'
+      : '✅ 抽奖完成，已公布中奖名单',
     winners,
   });
 }
