@@ -16,7 +16,7 @@ export default async function handler(req, res) {
     return res.status(404).json({ success: false, message: '❌ 无法取得最新贴文 ID' });
   }
 
-  // 是否已经抽奖过（仅记录内存）
+  // 内存记录抽奖状态
   const key = `drawn-${postId}`;
   const cache = global.drawnCache ||= {};
   const hasDrawn = cache[key];
@@ -27,7 +27,7 @@ export default async function handler(req, res) {
   const commentData = await commentRes.json();
   const comments = commentData?.data || [];
 
-  // 提取有效留言（01~99）
+  // 提取有效访客留言（01~99）
   const candidates = [];
   const numberSet = new Set();
   const userSet = new Set();
@@ -43,8 +43,8 @@ export default async function handler(req, res) {
     const uid = c.from?.id;
     const uname = c.from?.name;
 
-    // 必须有用户名，排除匿名
-    if (!uid || !uname) continue;
+    // 排除主页留言 & 匿名留言
+    if (!uid || !uname || uid === PAGE_ID) continue;
 
     candidates.push({
       number,
@@ -55,7 +55,7 @@ export default async function handler(req, res) {
     });
   }
 
-  // 随机抽奖（不同人不同号码）
+  // 随机抽取 3 位不同人、不同号码
   const winners = [];
   while (winners.length < 3 && candidates.length) {
     const i = Math.floor(Math.random() * candidates.length);
@@ -76,21 +76,21 @@ export default async function handler(req, res) {
     });
   }
 
-  // 构造回复内容
-  const list = winners.map(w => `@[${w.user_id}](${w.user_name}) ${w.number}`).join('\n');
-  const reply = `🎉🎊 本场直播抽奖结果 🎉🎊\n系统已自动回复得奖者：\n${list}\n⚠️⚠️ 只限今天直播兑现，逾期无效 ⚠️⚠️`;
+  // 构造公布留言
+  const list = winners.map(w => `${w.user_name} ${w.number}`).join('\n');
+  const summary = `🎉🎊 本场直播抽奖结果 🎉🎊\n系统已自动回复得奖者：\n\n${list}\n\n⚠️ 请查看你的号码下是否有回复！⚠️\n⚠️ 只限今天直播兑现，逾期无效 ⚠️`;
 
-  // 发出贴文留言（公布结果）
+  // 留言公布结果
   await fetch(`https://graph.facebook.com/${postId}/comments?access_token=${ACCESS_TOKEN}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message: reply }),
+    body: JSON.stringify({ message: summary }),
   });
 
   return res.status(200).json({
     success: true,
     message: hasDrawn
-      ? '⚠️ 本场直播已抽过奖，此次为重复测试'  // debug 模式或重复测试
+      ? '⚠️ 本场直播已抽奖过，此次为重复测试'
       : '✅ 抽奖完成，已公布中奖名单',
     winners,
   });
