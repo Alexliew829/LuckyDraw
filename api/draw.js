@@ -1,5 +1,5 @@
-// pages/api/draw.js
 import fetch from 'node-fetch';
+
 const PAGE_ID = process.env.PAGE_ID;
 const ACCESS_TOKEN = process.env.FB_ACCESS_TOKEN;
 const MAKE_WEBHOOK_URL = process.env.MAKE_WEBHOOK_URL;
@@ -7,6 +7,7 @@ const MAKE_WEBHOOK_URL = process.env.MAKE_WEBHOOK_URL;
 export default async function handler(req, res) {
   const isDebug = req.query.debug !== undefined;
 
+  // 获取最新贴文 ID
   const postRes = await fetch(`https://graph.facebook.com/${PAGE_ID}/posts?access_token=${ACCESS_TOKEN}&limit=1`);
   const postData = await postRes.json();
   const postId = postData?.data?.[0]?.id;
@@ -15,6 +16,7 @@ export default async function handler(req, res) {
     return res.status(404).json({ success: false, message: '❌ 无法取得最新贴文 ID' });
   }
 
+  // 限制每场直播只抽一次（debug 模式除外）
   if (!isDebug) {
     const key = `drawn-${postId}`;
     const cache = global.drawnCache ||= {};
@@ -24,6 +26,7 @@ export default async function handler(req, res) {
     cache[key] = true;
   }
 
+  // 获取贴文留言
   const commentRes = await fetch(`https://graph.facebook.com/${postId}/comments?access_token=${ACCESS_TOKEN}&filter=stream&limit=200`);
   const commentData = await commentRes.json();
   const comments = commentData?.data || [];
@@ -33,6 +36,9 @@ export default async function handler(req, res) {
   const userSet = new Set();
 
   for (const c of comments) {
+    // ✅ 排除主页账号留言
+    if (c.from?.id === PAGE_ID) continue;
+
     const msg = c.message;
     const match = msg?.match(/\b\d{1,2}\b/);
     if (!match) continue;
@@ -52,6 +58,7 @@ export default async function handler(req, res) {
     });
   }
 
+  // 随机抽出 3 个不同访客和号码
   const winners = [];
   while (winners.length < 3 && candidates.length) {
     const i = Math.floor(Math.random() * candidates.length);
@@ -72,6 +79,7 @@ export default async function handler(req, res) {
     });
   }
 
+  // 自动生成总结信息（交给 Make 留言）
   const summary = [
     '🎉🎊 本场直播抽奖结果 🎉🎊',
     '系统已自动回复中奖者：',
@@ -84,6 +92,7 @@ export default async function handler(req, res) {
     '⚠️ 只限今天直播兑现，逾期无效 ⚠️'
   ].join('\n');
 
+  // 传送到 Make Webhook，由 Make 留言
   await fetch(MAKE_WEBHOOK_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
