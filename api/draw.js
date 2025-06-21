@@ -16,7 +16,7 @@ export default async function handler(req, res) {
     return res.status(404).json({ success: false, message: '❌ 无法取得最新贴文 ID' });
   }
 
-  // 内存记录抽奖状态
+  // 是否已经抽奖过（仅记录内存）
   const key = `drawn-${postId}`;
   const cache = global.drawnCache ||= {};
   const hasDrawn = cache[key];
@@ -27,24 +27,25 @@ export default async function handler(req, res) {
   const commentData = await commentRes.json();
   const comments = commentData?.data || [];
 
-  // 提取有效访客留言（01~99）
+  // 提取有效留言（01~99，支持宽容匹配）
   const candidates = [];
   const numberSet = new Set();
   const userSet = new Set();
 
+  const regex = /[aAbB]?[ \_\-]?(0?[1-9]|[1-9][0-9])\b/;
+
   for (const c of comments) {
     const msg = c.message;
-    const match = msg?.match(/\b\d{1,2}\b/);
+    const match = msg?.match(regex);
     if (!match) continue;
 
-    const number = parseInt(match[0], 10);
+    const number = parseInt(match[1], 10);
     if (number < 1 || number > 99) continue;
 
     const uid = c.from?.id;
     const uname = c.from?.name;
 
-    // 排除主页留言 & 匿名留言
-    if (!uid || !uname || uid === PAGE_ID) continue;
+    if (!uid || !uname || uid === PAGE_ID) continue; // 跳过主页留言和匿名
 
     candidates.push({
       number,
@@ -55,7 +56,7 @@ export default async function handler(req, res) {
     });
   }
 
-  // 随机抽取 3 位不同人、不同号码
+  // 随机抽奖：不同人、不同号码
   const winners = [];
   while (winners.length < 3 && candidates.length) {
     const i = Math.floor(Math.random() * candidates.length);
@@ -76,22 +77,20 @@ export default async function handler(req, res) {
     });
   }
 
-  // 构造公布留言
+  // 构造公布内容（含 user_id + name + number）
   const list = winners.map(w => `${w.user_name} ${w.number}`).join('\n');
-  const summary = `🎉🎊 本场直播抽奖结果 🎉🎊\n系统已自动回复得奖者：\n\n${list}\n\n⚠️ 请查看你的号码下是否有回复！⚠️\n⚠️ 只限今天直播兑现，逾期无效 ⚠️`;
+  const reply = `🎉🎊 本场直播抽奖结果 🎉🎊\n系统已自动回复得奖者：\n\n${list}\n\n⚠️ 请查看你的号码下是否有回复！⚠️\n⚠️ 只限今天直播兑现，逾期无效 ⚠️`;
 
-  // 留言公布结果
+  // 发出贴文留言（公布结果）
   await fetch(`https://graph.facebook.com/${postId}/comments?access_token=${ACCESS_TOKEN}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message: summary }),
+    body: JSON.stringify({ message: reply }),
   });
 
   return res.status(200).json({
     success: true,
-    message: hasDrawn
-      ? '⚠️ 本场直播已抽奖过，此次为重复测试'
-      : '✅ 抽奖完成，已公布中奖名单',
+    message: hasDrawn ? '⚠️ 本场直播已抽过奖，此次为重复测试' : '✅ 抽奖完成，已公布中奖名单',
     winners,
   });
 }
