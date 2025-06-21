@@ -34,12 +34,17 @@
   <script>
     function startDraw() {
       const hasDrawn = localStorage.getItem('drawn');
-      if (hasDrawn) {
+      if (!hasDrawn) {
+        // 第一次抽奖，直接执行
+        localStorage.setItem('drawn', 'yes');
+        window.location.href = 'https://lucky-draw-delta-two.vercel.app/api/draw';
+      } else {
+        // 第二次起出现提示
         const confirmDraw = confirm("⚠️ 已抽奖一次，是否确认再次抽奖？");
-        if (!confirmDraw) return;
+        if (confirmDraw) {
+          window.location.href = 'https://lucky-draw-delta-two.vercel.app/api/draw';
+        }
       }
-      localStorage.setItem('drawn', 'yes');
-      window.location.href = 'https://lucky-draw-delta-two.vercel.app/api/draw';
     }
   </script>
 </body>
