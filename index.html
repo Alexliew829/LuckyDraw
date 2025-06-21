@@ -26,34 +26,29 @@
     }
   </style>
 </head>
-<body onclick="showButton()">
+<body>
   <img src="/apple-touch-icon.png" alt="幸运图标" width="120" style="border-radius: 24px;"><br><br>
   <h2>点击按钮启动幸运抽奖</h2>
-  <button id="drawButton" style="display:none;">🎉 开始抽奖</button>
+  <button onclick="startDraw()">🎉 开始抽奖</button>
 
   <script>
-    function showButton() {
-      const button = document.getElementById("drawButton");
-      if (button.style.display === "none") {
-        button.style.display = "inline-block";
-      }
-    }
+    const DRAW_URL = "https://lucky-draw-delta-two.vercel.app/api/draw";
+    const DRAW_KEY = "lastDrawTime";
 
-    document.getElementById("drawButton").addEventListener("click", function () {
-      const lastDraw = localStorage.getItem("lastDrawTime");
+    function startDraw() {
+      const lastTime = localStorage.getItem(DRAW_KEY);
       const now = Date.now();
+      const sixHours = 6 * 60 * 60 * 1000;
 
-      if (!lastDraw || now - parseInt(lastDraw) > 6 * 60 * 60 * 1000) {
-        // 第一次或超过 6 小时，更新记录并执行抽奖
-        localStorage.setItem("lastDrawTime", now.toString());
-        window.location.href = "https://lucky-draw-delta-two.vercel.app/api/draw";
-      } else {
-        const confirmRepeat = confirm("⚠️ 系统侦测本场直播已抽奖。\n是否确认再次抽奖？");
-        if (confirmRepeat) {
-          window.location.href = "https://lucky-draw-delta-two.vercel.app/api/draw";
-        }
+      if (lastTime && now - Number(lastTime) < sixHours) {
+        const confirmed = confirm("⚠️ 已抽奖一次，是否确认再次抽奖？");
+        if (!confirmed) return;
       }
-    });
+
+      // 更新抽奖时间
+      localStorage.setItem(DRAW_KEY, now);
+      window.location.href = DRAW_URL;
+    }
   </script>
 </body>
 </html>
