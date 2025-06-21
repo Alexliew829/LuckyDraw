@@ -1,13 +1,13 @@
 <!DOCTYPE html>
 <html lang="zh">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>幸运抽奖</title>
   <link rel="icon" href="/favicon.ico" />
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="幸运抽奖">
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="幸运抽奖" />
   <style>
     body {
       background: #f8f8f8;
@@ -32,17 +32,17 @@
   <button onclick="startDraw()">🎉 开始抽奖</button>
 
   <script>
+    let drawn = false;
+
     function startDraw() {
-      const hasDrawn = localStorage.getItem('drawn');
-      if (!hasDrawn) {
-        // 第一次抽奖，直接执行
-        localStorage.setItem('drawn', 'yes');
-        window.location.href = 'https://lucky-draw-delta-two.vercel.app/api/draw';
+      const alreadyDrawn = localStorage.getItem("drawn");
+      if (!alreadyDrawn) {
+        localStorage.setItem("drawn", "yes");
+        window.location.href = "https://lucky-draw-delta-two.vercel.app/api/draw";
       } else {
-        // 第二次起出现提示
-        const confirmDraw = confirm("⚠️ 已抽奖一次，是否确认再次抽奖？");
-        if (confirmDraw) {
-          window.location.href = 'https://lucky-draw-delta-two.vercel.app/api/draw';
+        const confirmRepeat = confirm("⚠️ 已抽奖一次，是否确认再次抽奖？");
+        if (confirmRepeat) {
+          window.location.href = "https://lucky-draw-delta-two.vercel.app/api/draw";
         }
       }
     }
