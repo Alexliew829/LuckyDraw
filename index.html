@@ -1,13 +1,13 @@
 <!DOCTYPE html>
 <html lang="zh">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>幸运抽奖</title>
   <link rel="icon" href="/favicon.ico" />
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-title" content="幸运抽奖" />
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="幸运抽奖">
   <style>
     body {
       background: #f8f8f8;
@@ -26,26 +26,34 @@
     }
   </style>
 </head>
-<body>
+<body onclick="showButton()">
   <img src="/apple-touch-icon.png" alt="幸运图标" width="120" style="border-radius: 24px;"><br><br>
   <h2>点击按钮启动幸运抽奖</h2>
-  <button onclick="startDraw()">🎉 开始抽奖</button>
+  <button id="drawButton" style="display:none;">🎉 开始抽奖</button>
 
   <script>
-    let drawn = false;
+    function showButton() {
+      const button = document.getElementById("drawButton");
+      if (button.style.display === "none") {
+        button.style.display = "inline-block";
+      }
+    }
 
-    function startDraw() {
-      const alreadyDrawn = localStorage.getItem("drawn");
-      if (!alreadyDrawn) {
-        localStorage.setItem("drawn", "yes");
+    document.getElementById("drawButton").addEventListener("click", function () {
+      const lastDraw = localStorage.getItem("lastDrawTime");
+      const now = Date.now();
+
+      if (!lastDraw || now - parseInt(lastDraw) > 6 * 60 * 60 * 1000) {
+        // 第一次或超过 6 小时，更新记录并执行抽奖
+        localStorage.setItem("lastDrawTime", now.toString());
         window.location.href = "https://lucky-draw-delta-two.vercel.app/api/draw";
       } else {
-        const confirmRepeat = confirm("⚠️ 已抽奖一次，是否确认再次抽奖？");
+        const confirmRepeat = confirm("⚠️ 系统侦测本场直播已抽奖。\n是否确认再次抽奖？");
         if (confirmRepeat) {
           window.location.href = "https://lucky-draw-delta-two.vercel.app/api/draw";
         }
       }
-    }
+    });
   </script>
 </body>
 </html>
