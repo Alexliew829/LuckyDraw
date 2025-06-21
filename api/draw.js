@@ -1,104 +1,153 @@
-// pages/api/draw.js
-import fetch from 'node-fetch';
-
-const PAGE_ID = process.env.PAGE_ID;
-const ACCESS_TOKEN = process.env.FB_ACCESS_TOKEN;
-
 export default async function handler(req, res) {
-  const isDebug = req.query.debug !== undefined;
+  const PAGE_ID = process.env.PAGE_ID;
+  const PAGE_TOKEN = process.env.FB_ACCESS_TOKEN;
+  const DEBUG = req.query.debug !== undefined;
+  const POST_ID = req.query.postId || null;
 
-  // 获取最新贴文 ID
-  const postRes = await fetch(`https://graph.facebook.com/${PAGE_ID}/posts?access_token=${ACCESS_TOKEN}&limit=1`);
-  const postData = await postRes.json();
-  const postId = postData?.data?.[0]?.id;
+  try {
+    let postId = POST_ID;
+    if (!postId) {
+      const postRes = await fetch(`https://graph.facebook.com/${PAGE_ID}/posts?access_token=${PAGE_TOKEN}&limit=5`);
+      const postData = await postRes.json();
+      if (!postData?.data?.length) {
+        return res.status(404).json({ error: '找不到贴文（API 返回空）', raw: postData });
+      }
+      postId = postData.data[0].id;
+    }
 
-  if (!postId) {
-    return res.status(404).json({ success: false, message: '❌ 无法取得最新贴文 ID' });
-  }
+    const allComments = [];
+    let nextPage = `https://graph.facebook.com/${postId}/comments?access_token=${PAGE_TOKEN}&fields=id,message,from&limit=100`;
 
-  // 内存记录是否抽过奖
-  const key = `drawn-${postId}`;
-  const cache = global.drawnCache ||= {};
-  const hasDrawn = cache[key];
-  cache[key] = true; // 不管是否 debug 都记录抽奖
+    while (nextPage) {
+      const res = await fetch(nextPage);
+      const data = await res.json();
+      allComments.push(...(data.data || []));
+      nextPage = data.paging?.next || null;
+    }
 
-  // 抓留言
-  const commentRes = await fetch(`https://graph.facebook.com/${postId}/comments?access_token=${ACCESS_TOKEN}&filter=stream&limit=200`);
-  const commentData = await commentRes.json();
-  const comments = commentData?.data || [];
+    const validEntries = [];
+    const regex = /([1-9][0-9]?)/;
+    for (const comment of allComments) {
+      const msg = comment.message || '';
+      const match = msg.match(regex);
+      const userId = comment.from?.id || null;
+      const userName = comment.from?.name || null;
 
-  const candidates = [];
-  const numberSet = new Set();
-  const userSet = new Set();
+      if (!match || userId === PAGE_ID) continue;
 
-  for (const c of comments) {
-    const msg = c.message || '';
-    const match = msg.match(/\b(?:[A-Za-z]?[-_\s]*)?(\d{1,2})\b/); // 宽容格式
-    if (!match) continue;
+      const number = match[1].padStart(2, '0');
 
-    const number = parseInt(match[1], 10);
-    if (number < 1 || number > 99) continue;
+      validEntries.push({
+        commentId: comment.id,
+        from: userId ? { id: userId, name: userName } : null,
+        number,
+        message: msg,
+      });
+    }
 
-    const uid = c.from?.id;
-    const uname = c.from?.name;
+    if (validEntries.length < 3) {
+      return res.status(400).json({ error: '有效用户留言不足 3 条（可能是管理员或留言无数字）', total: validEntries.length });
+    }
 
-    // 排除主页自己留言
-    if (!uid || !uname || uid === PAGE_ID) continue;
+    function shuffle(array) {
+      let currentIndex = array.length;
+      while (currentIndex !== 0) {
+        const randomIndex = Math.floor(Math.random() * currentIndex);
+        currentIndex--;
+        [array[currentIndex], array[randomIndex]] = [array[randomIndex], array[currentIndex]];
+      }
+      return array;
+    }
 
-    candidates.push({
-      number,
-      user_id: uid,
-      user_name: uname,
-      comment_id: c.id,
-      message: msg,
-    });
-  }
+    const winners = [];
+    const usedIds = new Set();
+    const usedNumbers = new Set();
 
-  // 抽出 3 位不同号码、不同用户
-  const winners = [];
-  while (winners.length < 3 && candidates.length) {
-    const i = Math.floor(Math.random() * candidates.length);
-    const pick = candidates.splice(i, 1)[0];
-    if (numberSet.has(pick.number) || userSet.has(pick.user_id)) continue;
-    winners.push(pick);
-    numberSet.add(pick.number);
-    userSet.add(pick.user_id);
-  }
+    for (const entry of shuffle(validEntries)) {
+      const uid = entry.from?.id || entry.commentId;
+      if (usedIds.has(uid)) continue;
+      if (usedNumbers.has(entry.number)) continue;
 
-  if (winners.length < 3) {
-    return res.status(400).json({
-      success: false,
-      message: '有效留言不足 3 个不同人或号码',
-      total: candidates.length,
-    });
-  }
+      winners.push(entry);
+      usedIds.add(uid);
+      usedNumbers.add(entry.number);
+      if (winners.length === 3) break;
+    }
 
-  // 给每个中奖留言者回复中奖信息
-  const rewardMsg = `🎉🎊 恭喜你获得折扣卷 RM100.00 🎉🎊\n🎉🎉 Congratulations! You’ve won a RM100 discount voucher! 🎉🎉\n⚠️⚠️ 只限今天直播兑现，逾期无效 ⚠️⚠️\n⚠️⚠️ Valid only during today’s live stream. ⚠️⚠️\n❌❌ 不得转让 ❌❌\n❌❌ Non-transferable ❌❌`;
+    if (winners.length < 3) {
+      return res.status(400).json({ error: '无法抽出 3 位不重复用户和号码', total: winners.length });
+    }
 
-  for (const winner of winners) {
-    await fetch(`https://graph.facebook.com/${winner.comment_id}/comments?access_token=${ACCESS_TOKEN}`, {
+    const replyMessage = `🎉🎊 恭喜你获得折扣卷 RM100.00 🎉🎊\n🎉🎉 Congratulations! You’ve won a RM100 discount voucher! 🎉🎉\n⚠️⚠️ 只限今天直播兑现，逾期无效 ⚠️⚠️\n⚠️⚠️ Valid only during today’s live stream. ⚠️⚠️\n❌❌ 不得转让 ❌❌\n❌❌ Non-transferable ❌❌`;
+    const results = [];
+
+    // 延迟函数
+    function delay(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    // 安全节流留言回复
+    for (const winner of winners) {
+      try {
+        const replyRes = await fetch(`https://graph.facebook.com/${winner.commentId}/comments?access_token=${PAGE_TOKEN}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: replyMessage })
+        });
+        const replyData = await replyRes.json();
+        results.push({
+          number: winner.number,
+          commentId: winner.commentId,
+          originalMessage: winner.message,
+          from: winner.from,
+          replyStatus: replyData
+        });
+        await delay(3000); // 每条留言间隔 3 秒
+      } catch (err) {
+        results.push({
+          number: winner.number,
+          commentId: winner.commentId,
+          originalMessage: winner.message,
+          from: winner.from,
+          replyStatus: { error: err.message }
+        });
+        console.warn('留言失败，已跳过：', err.message);
+        await delay(3000);
+      }
+    }
+
+    const list = winners.map(w => {
+      if (w.from?.id && w.from?.name) {
+        return `- @[${w.from.id}](${w.from.name}) ${w.number}`;
+      } else {
+        return `- 第一个留言 ${w.number}`;
+      }
+    }).join('\n');
+
+    const summaryMessage = `🎉🎊 本场直播抽奖结果 🎉🎊\n系统已自动回复中奖者：\n${list}\n⚠️ 请查看你的号码下是否有回复！⚠️\n⚠️ 只限今天直播兑现，逾期无效 ⚠️`;
+
+    const postCommentRes = await fetch(`https://graph.facebook.com/${postId}/comments?access_token=${PAGE_TOKEN}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: rewardMsg }),
+      body: JSON.stringify({ message: summaryMessage })
     });
+    const postCommentData = await postCommentRes.json();
+
+    if (DEBUG) {
+      return res.status(200).json({
+        message: '调试输出',
+        postId,
+        totalValid: validEntries.length,
+        winners,
+        results,
+        summaryStatus: postCommentData
+      });
+    }
+
+    return res.status(200).json({ success: true, postId, replied: results });
+
+  } catch (err) {
+    console.error('抽奖失败:', err);
+    return res.status(500).json({ error: '服务器错误', details: err.message });
   }
-
-  // 公布结果贴文留言
-  const resultLines = winners.map(w => `${w.user_name} ${w.number}`).join('\n');
-  const resultSummary = `🎉🎊 本场直播抽奖结果 🎉🎊\n系统已自动回复中奖者：\n\n${resultLines}\n\n⚠️ 请查看你的号码下是否有回复！⚠️\n⚠️ 只限今天直播兑现，逾期无效 ⚠️`;
-
-  await fetch(`https://graph.facebook.com/${postId}/comments?access_token=${ACCESS_TOKEN}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message: resultSummary }),
-  });
-
-  return res.status(200).json({
-    success: true,
-    message: hasDrawn
-      ? '⚠️ 本场直播已抽过奖，此次为重复测试'
-      : '✅ 抽奖完成，已公布中奖名单',
-    winners,
-  });
 }
