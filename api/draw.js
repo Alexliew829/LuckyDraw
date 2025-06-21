@@ -27,25 +27,33 @@ export default async function handler(req, res) {
   const commentData = await commentRes.json();
   const comments = commentData?.data || [];
 
-  // 提取有效留言（01~99，支持宽容匹配）
+  if (isDebug) {
+    const allMsgs = comments.map(c => ({
+      id: c.id,
+      from: c.from?.name || '(无名)',
+      msg: c.message,
+      uid: c.from?.id || null,
+    }));
+    return res.status(200).json({ success: true, total: allMsgs.length, comments: allMsgs });
+  }
+
+  // 提取有效留言（01~99）
   const candidates = [];
   const numberSet = new Set();
   const userSet = new Set();
 
-  const regex = /[aAbB]?[ \_\-]?(0?[1-9]|[1-9][0-9])\b/;
-
   for (const c of comments) {
+    if (c.from?.id === PAGE_ID) continue; // 跳过主页账号
     const msg = c.message;
-    const match = msg?.match(regex);
+    const match = msg?.match(/\b(0?[1-9]|[1-9][0-9])\b/); // 支持01~99
     if (!match) continue;
 
-    const number = parseInt(match[1], 10);
+    const number = parseInt(match[0], 10);
     if (number < 1 || number > 99) continue;
 
     const uid = c.from?.id;
     const uname = c.from?.name;
-
-    if (!uid || !uname || uid === PAGE_ID) continue; // 跳过主页留言和匿名
+    if (!uid || !uname) continue;
 
     candidates.push({
       number,
@@ -56,7 +64,7 @@ export default async function handler(req, res) {
     });
   }
 
-  // 随机抽奖：不同人、不同号码
+  // 随机抽奖（不同人不同号码）
   const winners = [];
   while (winners.length < 3 && candidates.length) {
     const i = Math.floor(Math.random() * candidates.length);
@@ -77,11 +85,9 @@ export default async function handler(req, res) {
     });
   }
 
-  // 构造公布内容（含 user_id + name + number）
-  const list = winners.map(w => `${w.user_name} ${w.number}`).join('\n');
-  const reply = `🎉🎊 本场直播抽奖结果 🎉🎊\n系统已自动回复得奖者：\n\n${list}\n\n⚠️ 请查看你的号码下是否有回复！⚠️\n⚠️ 只限今天直播兑现，逾期无效 ⚠️`;
+  const list = winners.map(w => `@[${w.user_id}](${w.user_name}) ${w.number}`).join('\n');
+  const reply = `🎉🎊 本场直播抽奖结果 🎉🎊\n系统已自动回复得奖者：\n${list}\n⚠️⚠️ 只限今天直播兑现，逾期无效 ⚠️⚠️`;
 
-  // 发出贴文留言（公布结果）
   await fetch(`https://graph.facebook.com/${postId}/comments?access_token=${ACCESS_TOKEN}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
