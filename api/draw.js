@@ -1,3 +1,5 @@
+let lastDrawPostId = null;
+
 export default async function handler(req, res) {
   const PAGE_ID = process.env.PAGE_ID;
   const PAGE_TOKEN = process.env.FB_ACCESS_TOKEN;
@@ -14,6 +16,14 @@ export default async function handler(req, res) {
       }
       postId = postData.data[0].id;
     }
+
+    if (!DEBUG && postId === lastDrawPostId) {
+      return res.status(200).json({
+        warning: '⚠️ 本场可能已抽奖一次，是否确认再次抽奖？',
+        confirm: true
+      });
+    }
+    lastDrawPostId = postId;
 
     const allComments = [];
     let nextPage = `https://graph.facebook.com/${postId}/comments?access_token=${PAGE_TOKEN}&fields=id,message,from,created_time&limit=100`;
@@ -70,14 +80,12 @@ export default async function handler(req, res) {
 
     for (const entry of shuffledEntries) {
       const uid = entry.from.id;
-      const number = entry.number;
-
-      if (usedUserIds.has(uid) || usedNumbers.has(number)) continue;
+      if (usedUserIds.has(uid)) continue;
+      if (usedNumbers.has(entry.number)) continue;
 
       winners.push(entry);
       usedUserIds.add(uid);
-      usedNumbers.add(number);
-
+      usedNumbers.add(entry.number);
       if (winners.length === 3) break;
     }
 
