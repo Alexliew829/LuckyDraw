@@ -16,7 +16,7 @@ export default async function handler(req, res) {
     }
 
     const allComments = [];
-    let nextPage = `https://graph.facebook.com/${postId}/comments?access_token=${PAGE_TOKEN}&fields=id,message,from&limit=100`;
+    let nextPage = `https://graph.facebook.com/${postId}/comments?access_token=${PAGE_TOKEN}&fields=id,message,from,created_time&limit=100`;
 
     while (nextPage) {
       const res = await fetch(nextPage);
@@ -25,6 +25,8 @@ export default async function handler(req, res) {
       nextPage = data.paging?.next || null;
     }
 
+    const ONE_HOUR_AGO = Date.now() - 60 * 60 * 1000;
+
     const validEntries = [];
     const regex = /([1-9][0-9]?)/;
     for (const comment of allComments) {
@@ -32,7 +34,9 @@ export default async function handler(req, res) {
       const match = msg.match(regex);
       const userId = comment.from?.id || null;
       const userName = comment.from?.name || null;
+      const createdTime = new Date(comment.created_time).getTime();
 
+      if (createdTime < ONE_HOUR_AGO) continue;
       if (!match || userId === PAGE_ID) continue;
 
       const number = match[1].padStart(2, '0');
@@ -64,7 +68,8 @@ export default async function handler(req, res) {
     const usedNumbers = new Set();
 
     for (const entry of shuffle(validEntries)) {
-      const uid = entry.from?.id || entry.commentId;
+      if (!entry.from?.id) continue;
+      const uid = entry.from.id;
       if (usedIds.has(uid)) continue;
       if (usedNumbers.has(entry.number)) continue;
 
