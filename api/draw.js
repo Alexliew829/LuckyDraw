@@ -68,8 +68,7 @@ export default async function handler(req, res) {
     const usedNumbers = new Set();
 
     for (const entry of shuffle(validEntries)) {
-      if (!entry.from?.id) continue;
-      const uid = entry.from.id;
+      const uid = entry.from?.id || entry.commentId; // 匿名时以 commentId 做唯一标识
       if (usedIds.has(uid)) continue;
       if (usedNumbers.has(entry.number)) continue;
 
