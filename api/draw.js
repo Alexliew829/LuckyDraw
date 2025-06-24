@@ -29,9 +29,6 @@ export default async function handler(req, res) {
 
     const validEntries = [];
     const regex = /([1-9][0-9]?)/;
-    const seenUsers = new Set();
-    const seenNumbers = new Set();
-
     for (const comment of allComments) {
       const msg = comment.message || '';
       const match = msg.match(regex);
@@ -43,25 +40,17 @@ export default async function handler(req, res) {
       if (!match || userId === PAGE_ID) continue;
 
       const number = match[1].padStart(2, '0');
-      const userKey = userId || comment.id;
-
-      if (seenUsers.has(userKey)) continue;
-      if (seenNumbers.has(number)) continue;
-
-      seenUsers.add(userKey);
-      seenNumbers.add(number);
 
       validEntries.push({
         commentId: comment.id,
-        from: userId ? { id: userId, name: userName } : null,
+        from: { id: userId, name: userName },
         number,
         message: msg,
-        userKey
       });
     }
 
     if (validEntries.length < 3) {
-      return res.status(400).json({ error: '有效用户留言不足 3 条（可能是管理员、重复或留言无数字）', total: validEntries.length });
+      return res.status(400).json({ error: '有效用户留言不足 3 条（可能是管理员或留言无数字）', total: validEntries.length });
     }
 
     function shuffle(array) {
@@ -74,7 +63,27 @@ export default async function handler(req, res) {
       return array;
     }
 
-    const winners = shuffle(validEntries).slice(0, 3);
+    const shuffledEntries = shuffle(validEntries);
+    const winners = [];
+    const usedUserIds = new Set();
+    const usedNumbers = new Set();
+
+    for (const entry of shuffledEntries) {
+      const uid = entry.from.id;
+      const number = entry.number;
+
+      if (usedUserIds.has(uid) || usedNumbers.has(number)) continue;
+
+      winners.push(entry);
+      usedUserIds.add(uid);
+      usedNumbers.add(number);
+
+      if (winners.length === 3) break;
+    }
+
+    if (winners.length < 3) {
+      return res.status(400).json({ error: '无法抽出 3 位不重复用户和号码', total: winners.length });
+    }
 
     const replyMessage = `🎉🎊 恭喜你获得折扣卷 RM100.00 🎉🎊\n🎉🎉 Congratulations! You’ve won a RM100 discount voucher! 🎉🎉\n⚠️⚠️ 只限今天直播兑现，逾期无效 ⚠️⚠️\n⚠️⚠️ Valid only during today’s live stream. ⚠️⚠️\n❌❌ 不得转让 ❌❌\n❌❌ Non-transferable ❌❌`;
     const results = [];
@@ -112,13 +121,7 @@ export default async function handler(req, res) {
       }
     }
 
-    const list = winners.map(w => {
-      if (w.from?.id && w.from?.name) {
-        return `- @[${w.from.id}](${w.from.name}) ${w.number}`;
-      } else {
-        return `- 第一个留言 ${w.number}`;
-      }
-    }).join('\n');
+    const list = winners.map(w => `- @[${w.from.id}](${w.from.name}) ${w.number}`).join('\n');
 
     const summaryMessage = `🎉🎊 本场直播抽奖结果 🎉🎊\n系统已自动回复中奖者：\n${list}\n⚠️ 请查看你的号码下是否有回复！⚠️\n⚠️ 只限今天直播兑现，逾期无效 ⚠️`;
 
