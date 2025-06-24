@@ -19,7 +19,7 @@ export default async function handler(req, res) {
     let nextPage = `https://graph.facebook.com/${postId}/comments?access_token=${PAGE_TOKEN}&fields=id,message,from&limit=100`;
 
     while (nextPage) {
-      const fbRes = await fetch(nextPage); // ⚠️ 改名避免冲突
+      const fbRes = await fetch(nextPage); // 避免 res 命名冲突
       const data = await fbRes.json();
       allComments.push(...(data.data || []));
       nextPage = data.paging?.next || null;
@@ -39,7 +39,7 @@ export default async function handler(req, res) {
 
       validEntries.push({
         commentId: comment.id,
-        from: userId ? { id: userId, name: userName } : null,
+        from: userId || userName ? { id: userId, name: userName } : null,
         number,
         message: msg,
       });
@@ -66,9 +66,11 @@ export default async function handler(req, res) {
     for (const entry of shuffle(validEntries)) {
       let uid;
       if (entry.from?.id) {
-        uid = entry.from.id;
+        uid = entry.from.id; // 有 ID 的用户
+      } else if (entry.from?.name) {
+        uid = `name-${entry.from.name}`; // 同名访客（如 Alex Liew）仍当同一人
       } else {
-        uid = `anon-${entry.commentId}`;
+        uid = `anon-${entry.commentId}`; // 真匿名 fallback
       }
 
       if (usedIds.has(uid)) continue;
@@ -106,7 +108,7 @@ export default async function handler(req, res) {
           from: winner.from,
           replyStatus: replyData
         });
-        await delay(3000);
+        await delay(3000); // 每条留言间隔 3 秒
       } catch (err) {
         results.push({
           number: winner.number,
