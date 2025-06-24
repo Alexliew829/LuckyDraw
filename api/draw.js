@@ -72,7 +72,12 @@ export default async function handler(req, res) {
     for (const entry of shuffle(validEntries)) {
       const rawId = entry.from?.id || '';
       const rawName = entry.from?.name || '';
-      const uid = `${rawId}`.toLowerCase().trim() + '|' + `${rawName}`.toLowerCase().trim();
+
+      const uid =
+        (rawId?.toLowerCase?.() || '').trim() +
+        '|' +
+        (rawName?.toLowerCase?.() || '').trim() ||
+        entry.commentId; // fallback：匿名留言用 commentId 当身份
 
       if (usedIds.has(uid)) continue;
       if (usedNumbers.has(entry.number)) continue;
