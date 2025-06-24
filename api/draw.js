@@ -19,7 +19,7 @@ export default async function handler(req, res) {
     let nextPage = `https://graph.facebook.com/${postId}/comments?access_token=${PAGE_TOKEN}&fields=id,message,from&limit=100`;
 
     while (nextPage) {
-      const fbRes = await fetch(nextPage); // 避免冲突
+      const fbRes = await fetch(nextPage);
       const data = await fbRes.json();
       allComments.push(...(data.data || []));
       nextPage = data.paging?.next || null;
@@ -27,6 +27,7 @@ export default async function handler(req, res) {
 
     const validEntries = [];
     const regex = /([1-9][0-9]?)/;
+
     for (const comment of allComments) {
       const msg = comment.message || '';
       const match = msg.match(regex);
@@ -46,7 +47,12 @@ export default async function handler(req, res) {
     }
 
     if (validEntries.length < 3) {
-      return res.status(400).json({ error: '有效用户留言不足 3 条（可能是管理员或留言无数字）', total: validEntries.length });
+      return res.status(400).json({
+        error: '有效用户留言不足 3 条（可能留言重复、格式错误或为管理员）',
+        totalValid: validEntries.length,
+        postId,
+        validEntries
+      });
     }
 
     function shuffle(array) {
@@ -78,7 +84,13 @@ export default async function handler(req, res) {
     }
 
     if (winners.length < 3) {
-      return res.status(400).json({ error: '无法抽出 3 位不重复用户和号码', total: winners.length });
+      return res.status(400).json({
+        error: '无法抽出 3 位不重复用户和号码',
+        totalValid: validEntries.length,
+        uniqueVisitors: usedIds.size,
+        uniqueNumbers: usedNumbers.size,
+        validEntries
+      });
     }
 
     const replyMessage = `🎉🎊 恭喜你获得折扣卷 RM100.00 🎉🎊\n🎉🎉 Congratulations! You’ve won a RM100 discount voucher! 🎉🎉\n⚠️⚠️ 只限今天直播兑现，逾期无效 ⚠️⚠️\n⚠️⚠️ Valid only during today’s live stream. ⚠️⚠️\n❌❌ 不得转让 ❌❌\n❌❌ Non-transferable ❌❌`;
@@ -112,7 +124,6 @@ export default async function handler(req, res) {
           from: winner.from,
           replyStatus: { error: err.message }
         });
-        console.warn('留言失败，已跳过：', err.message);
         await delay(3000);
       }
     }
@@ -140,8 +151,8 @@ export default async function handler(req, res) {
         postId,
         totalValid: validEntries.length,
         winners,
-        results,
-        summaryStatus: postCommentData
+        summaryStatus: postCommentData,
+        replied: results
       });
     }
 
