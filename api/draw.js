@@ -1,5 +1,3 @@
-let lastDrawPostId = null;
-
 export default async function handler(req, res) {
   const PAGE_ID = process.env.PAGE_ID;
   const PAGE_TOKEN = process.env.FB_ACCESS_TOKEN;
@@ -9,7 +7,7 @@ export default async function handler(req, res) {
   try {
     let postId = POST_ID;
     if (!postId) {
-      const postRes = await fetch(`https://graph.facebook.com/${PAGE_ID}/posts?access_token=${PAGE_TOKEN}&limit=5`);
+      const postRes = await fetch(`https://graph.facebook.com/${PAGE_ID}/posts?access_token=${PAGE_TOKEN}&limit=1`);
       const postData = await postRes.json();
       if (!postData?.data?.length) {
         return res.status(404).json({ error: '找不到贴文（API 返回空）', raw: postData });
@@ -17,16 +15,22 @@ export default async function handler(req, res) {
       postId = postData.data[0].id;
     }
 
-    if (!DEBUG && postId === lastDrawPostId) {
-      return res.status(200).json({
-        warning: '⚠️ 本场已抽奖一次，是否确认再次抽奖？',
-        confirm: true
+    // 检查是否已经抽过奖（根据贴文是否已有中奖公告）
+    const summaryCheckRes = await fetch(`https://graph.facebook.com/${postId}/comments?access_token=${PAGE_TOKEN}&limit=100`);
+    const summaryCheckData = await summaryCheckRes.json();
+    const alreadyDrawn = summaryCheckData.data?.some(c =>
+      c.message?.includes('本场直播抽奖结果') ||
+      c.message?.includes('已自动回复中奖者')
+    );
+
+    if (alreadyDrawn && !DEBUG) {
+      return res.status(403).json({
+        error: '⚠️ 本场已抽奖一次，是否确认再次抽奖？加入 ?debug 可重新抽奖'
       });
     }
-    lastDrawPostId = postId;
 
     const allComments = [];
-    let nextPage = `https://graph.facebook.com/${postId}/comments?access_token=${PAGE_TOKEN}&fields=id,message,from&limit=100`;
+    let nextPage = `https://graph.facebook.com/${postId}/comments?access_token=${PAGE_TOKEN}&fields=id,message,from,created_time&limit=100`;
 
     while (nextPage) {
       const res = await fetch(nextPage);
@@ -35,28 +39,32 @@ export default async function handler(req, res) {
       nextPage = data.paging?.next || null;
     }
 
-    const validEntries = [];
+    const ONE_HOUR_AGO = Date.now() - 60 * 60 * 1000;
     const regex = /([1-9][0-9]?)/;
+    const validEntries = [];
+
     for (const comment of allComments) {
       const msg = comment.message || '';
       const match = msg.match(regex);
-      const userId = comment.from?.id || null;
-      const userName = comment.from?.name || null;
+      const userId = comment.from?.id;
+      const userName = comment.from?.name;
+      const createdTime = new Date(comment.created_time).getTime();
 
-      if (!match || userId === PAGE_ID) continue;
+      if (!match || !userId || userId === PAGE_ID) continue;
+      if (createdTime < ONE_HOUR_AGO) continue;
 
       const number = match[1].padStart(2, '0');
 
       validEntries.push({
         commentId: comment.id,
-        from: userId ? { id: userId, name: userName } : null,
+        from: { id: userId, name: userName },
         number,
         message: msg,
       });
     }
 
     if (validEntries.length < 3) {
-      return res.status(400).json({ error: '有效用户留言不足 3 条（可能是管理员或留言无数字）', total: validEntries.length });
+      return res.status(400).json({ error: '有效留言不足 3 条（需包含号码、访客、非管理员）', total: validEntries.length });
     }
 
     function shuffle(array) {
@@ -74,13 +82,12 @@ export default async function handler(req, res) {
     const usedNumbers = new Set();
 
     for (const entry of shuffle(validEntries)) {
-      const uid = entry.from?.id || entry.commentId;
-      if (usedIds.has(uid)) continue;
-      if (usedNumbers.has(entry.number)) continue;
-
+      const uid = entry.from?.id;
+      const number = entry.number;
+      if (usedIds.has(uid) || usedNumbers.has(number)) continue;
       winners.push(entry);
       usedIds.add(uid);
-      usedNumbers.add(entry.number);
+      usedNumbers.add(number);
       if (winners.length === 3) break;
     }
 
@@ -123,14 +130,7 @@ export default async function handler(req, res) {
       }
     }
 
-    const list = winners.map(w => {
-      if (w.from?.id && w.from?.name) {
-        return `- @[${w.from.id}](${w.from.name}) ${w.number}`;
-      } else {
-        return `- 第一个留言 ${w.number}`;
-      }
-    }).join('\n');
-
+    const list = winners.map(w => `- @[${w.from.id}](${w.from.name}) ${w.number}`).join('\n');
     const summaryMessage = `🎉🎊 本场直播抽奖结果 🎉🎊\n系统已自动回复中奖者：\n${list}\n⚠️ 请查看你的号码下是否有回复！⚠️\n⚠️ 只限今天直播兑现，逾期无效 ⚠️`;
 
     const postCommentRes = await fetch(`https://graph.facebook.com/${postId}/comments?access_token=${PAGE_TOKEN}`, {
@@ -142,9 +142,9 @@ export default async function handler(req, res) {
 
     if (DEBUG) {
       return res.status(200).json({
-        message: '调试输出',
+        debug: true,
         postId,
-        totalValid: validEntries.length,
+        valid: validEntries.length,
         winners,
         results,
         summaryStatus: postCommentData
