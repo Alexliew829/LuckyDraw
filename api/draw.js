@@ -39,7 +39,6 @@ export default async function handler(req, res) {
       nextPage = data.paging?.next || null;
     }
 
-    const ONE_HOUR_AGO = Date.now() - 60 * 60 * 1000;
     const regex = /([1-9][0-9]?)/;
     const validEntries = [];
 
@@ -48,10 +47,8 @@ export default async function handler(req, res) {
       const match = msg.match(regex);
       const userId = comment.from?.id;
       const userName = comment.from?.name;
-      const createdTime = new Date(comment.created_time).getTime();
 
       if (!match || !userId || userId === PAGE_ID) continue;
-      if (createdTime < ONE_HOUR_AGO) continue;
 
       const number = match[1].padStart(2, '0');
 
