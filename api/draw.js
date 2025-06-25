@@ -106,7 +106,15 @@ export default async function handler(req, res) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ message: replyMessage })
         });
-        const replyData = await replyRes.json();
+
+        const replyText = await replyRes.text();
+        let replyData;
+        try {
+          replyData = JSON.parse(replyText);
+        } catch (jsonErr) {
+          replyData = { raw: replyText, parseError: jsonErr.message };
+        }
+
         results.push({
           number: winner.number,
           commentId: winner.commentId,
@@ -114,7 +122,10 @@ export default async function handler(req, res) {
           from: winner.from,
           replyStatus: replyData
         });
+
+        console.log(`✅ 已回复 ${winner.from.name}:`, replyData);
         await delay(3000);
+
       } catch (err) {
         results.push({
           number: winner.number,
@@ -123,6 +134,7 @@ export default async function handler(req, res) {
           from: winner.from,
           replyStatus: { error: err.message }
         });
+        console.warn(`❌ 回复失败 (${winner.from.name})：`, err.message);
         await delay(3000);
       }
     }
