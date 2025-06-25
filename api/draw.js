@@ -1,92 +1,95 @@
-import fetch from 'node-fetch';
+// pages/api/draw.js
+import { initializeApp, cert, getApps } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
+import { readFileSync } from 'fs';
 
+const firebasePrivateKey = process.env.FIREBASE_ADMIN_KEY;
 const PAGE_ID = process.env.PAGE_ID;
 const PAGE_TOKEN = process.env.FB_ACCESS_TOKEN;
 
+if (!getApps().length) {
+  initializeApp({
+    credential: cert(JSON.parse(firebasePrivateKey))
+  });
+}
+
 export default async function handler(req, res) {
-  const debug = req.query.debug !== undefined;
+  const isDebug = req.query.debug !== undefined;
 
   try {
-    // Step 1: 获取最新贴文 ID
+    // 获取最新贴文 ID
     const postRes = await fetch(`https://graph.facebook.com/${PAGE_ID}/posts?access_token=${PAGE_TOKEN}&limit=1`);
     const postData = await postRes.json();
-    const postId = postData?.data?.[0]?.id;
+    const post_id = postData?.data?.[0]?.id;
 
-    if (!postId) return res.status(500).json({ error: '无法取得贴文 ID', raw: postData });
+    if (!post_id) {
+      return res.status(404).json({ error: '无法获取贴文 ID', raw: postData });
+    }
 
-    // Step 2: 获取留言
-    const commentsRes = await fetch(`https://graph.facebook.com/${postId}/comments?access_token=${PAGE_TOKEN}&filter=stream&limit=100`);
+    // 获取所有留言
+    const commentsRes = await fetch(`https://graph.facebook.com/${post_id}/comments?filter=stream&limit=100&access_token=${PAGE_TOKEN}`);
     const commentsData = await commentsRes.json();
-    const comments = commentsData?.data || [];
 
-    // Step 3: 过滤有效留言（包含数字、非主页、访客）
-    const numberRegex = /(?:^|\D)(\d{1,2})(?:\D|$)/;
+    const rawComments = commentsData?.data || [];
 
-    const validEntries = [];
+    // 处理留言：只要非主页留言就加入
+    const valid = [];
     const seenUsers = new Set();
     const seenNumbers = new Set();
 
-    for (const comment of comments) {
-      const msg = comment.message || '';
-      const match = msg.match(numberRegex);
-      const number = match ? match[1].padStart(2, '0') : null;
+    for (const c of rawComments) {
+      if (!c.from || c.from.id === PAGE_ID) continue; // 跳过主页留言
 
-      const from = comment.from;
-      const userId = from?.id;
-      const userName = from?.name || '匿名用户';
+      const numberMatch = c.message.match(/\b(\d{1,2})\b/);
+      if (!numberMatch) continue; // 没有号码
 
-      if (!number || !userId || userId === PAGE_ID) continue; // 需要访客、有数字、非主页
+      const number = numberMatch[1];
+      const userId = c.from.id;
 
-      // 防重复用户 + 防重复号码
-      if (seenUsers.has(userId) || seenNumbers.has(number)) continue;
+      if (seenUsers.has(userId)) continue; // 不同人
+      if (seenNumbers.has(number)) continue; // 不同号码
 
       seenUsers.add(userId);
       seenNumbers.add(number);
-      validEntries.push({ userId, userName, number, commentId: comment.id });
-    }
 
-    if (validEntries.length < 3) {
-      return res.status(400).json({ error: '抽奖失败：有效留言不足 3 条（需包含号码、访客、非主页）', total: validEntries.length });
-    }
-
-    // Step 4: 随机抽出 3 个
-    const winners = [];
-    while (winners.length < 3 && validEntries.length > 0) {
-      const index = Math.floor(Math.random() * validEntries.length);
-      winners.push(validEntries.splice(index, 1)[0]);
-    }
-
-    // Step 5: 公布总结果（简洁版）
-    const summary =
-`🎉🎊 本场直播抽奖结果 🎉🎊
-系统已自动回复中奖者：
-${winners.map(w => `- 留言号码 ${w.number}`).join('\n')}
-⚠️ 请查看你的号码下是否有回复！⚠️
-⚠️ 只限今天直播兑现，逾期无效 ⚠️`;
-
-    // Step 6: 自动回复每个中奖留言
-    for (const winner of winners) {
-      const replyUrl = `https://graph.facebook.com/${winner.commentId}/comments`;
-      await fetch(replyUrl, {
-        method: 'POST',
-        body: new URLSearchParams({
-          access_token: PAGE_TOKEN,
-          message: `🎉 恭喜中奖！您的号码 ${winner.number} 已被抽中 🎉`
-        }),
+      valid.push({
+        number,
+        user_id: userId,
+        user_name: c.from.name || '匿名用户',
+        comment_id: c.id
       });
     }
 
-    // Step 7: 公布总留言
-    await fetch(`https://graph.facebook.com/${postId}/comments`, {
-      method: 'POST',
-      body: new URLSearchParams({
-        access_token: PAGE_TOKEN,
-        message: summary
-      }),
-    });
+    if (isDebug) {
+      return res.status(200).json({
+        message: 'Debug 模式',
+        post_id,
+        total_raw: rawComments.length,
+        total_valid: valid.length,
+        sample: valid.slice(0, 10)
+      });
+    }
 
-    return res.status(200).json({ success: true, winners });
+    if (valid.length < 3) {
+      return res.status(400).json({
+        error: '抽奖失败：有效留言不足 3 条（需包含号码、访客、非主页）',
+        total: valid.length
+      });
+    }
+
+    // 随机抽取 3 位不同得奖者
+    const shuffled = valid.sort(() => 0.5 - Math.random());
+    const winners = shuffled.slice(0, 3);
+
+    return res.status(200).json({
+      success: true,
+      post_id,
+      winners
+    });
   } catch (err) {
-    return res.status(500).json({ error: '系统错误', details: err.message });
+    return res.status(500).json({
+      error: '系统错误，请稍后再试',
+      details: err.message
+    });
   }
 }
