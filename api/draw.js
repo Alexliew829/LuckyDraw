@@ -17,7 +17,6 @@ export default async function handler(req, res) {
       postId = postData.data[0].id;
     }
 
-    // 提示是否重复抽奖（仅限非 debug）
     if (!DEBUG && postId === lastDrawPostId) {
       return res.status(200).json({
         warning: '⚠️ 本场已抽奖一次，是否确认再次抽奖？',
@@ -27,7 +26,7 @@ export default async function handler(req, res) {
     lastDrawPostId = postId;
 
     const allComments = [];
-    let nextPage = `https://graph.facebook.com/${postId}/comments?access_token=${PAGE_TOKEN}&fields=id,message,from,created_time&limit=100`;
+    let nextPage = `https://graph.facebook.com/${postId}/comments?access_token=${PAGE_TOKEN}&fields=id,message,from&limit=100`;
 
     while (nextPage) {
       const res = await fetch(nextPage);
@@ -36,27 +35,21 @@ export default async function handler(req, res) {
       nextPage = data.paging?.next || null;
     }
 
-    const ONE_HOUR_AGO = Date.now() - 60 * 60 * 1000;
-    const regex = /([1-9][0-9]?)/;
     const validEntries = [];
-    const seenUserIds = new Set();
-
+    const regex = /([1-9][0-9]?)/;
     for (const comment of allComments) {
       const msg = comment.message || '';
       const match = msg.match(regex);
       const userId = comment.from?.id || null;
       const userName = comment.from?.name || null;
-      const createdTime = new Date(comment.created_time).getTime();
 
-      if (createdTime < ONE_HOUR_AGO) continue;
-      if (!match || userId === PAGE_ID || seenUserIds.has(userId)) continue;
+      if (!match || userId === PAGE_ID) continue;
 
       const number = match[1].padStart(2, '0');
-      seenUserIds.add(userId);
 
       validEntries.push({
         commentId: comment.id,
-        from: { id: userId, name: userName },
+        from: userId ? { id: userId, name: userName } : null,
         number,
         message: msg,
       });
@@ -76,15 +69,17 @@ export default async function handler(req, res) {
       return array;
     }
 
-    const shuffledEntries = shuffle(validEntries);
     const winners = [];
-    const usedUserIds = new Set();
+    const usedIds = new Set();
     const usedNumbers = new Set();
 
-    for (const entry of shuffledEntries) {
-      if (usedUserIds.has(entry.from.id) || usedNumbers.has(entry.number)) continue;
+    for (const entry of shuffle(validEntries)) {
+      const uid = entry.from?.id || entry.commentId;
+      if (usedIds.has(uid)) continue;
+      if (usedNumbers.has(entry.number)) continue;
+
       winners.push(entry);
-      usedUserIds.add(entry.from.id);
+      usedIds.add(uid);
       usedNumbers.add(entry.number);
       if (winners.length === 3) break;
     }
@@ -108,15 +103,34 @@ export default async function handler(req, res) {
           body: JSON.stringify({ message: replyMessage })
         });
         const replyData = await replyRes.json();
-        results.push({ ...winner, replyStatus: replyData });
+        results.push({
+          number: winner.number,
+          commentId: winner.commentId,
+          originalMessage: winner.message,
+          from: winner.from,
+          replyStatus: replyData
+        });
         await delay(3000);
       } catch (err) {
-        results.push({ ...winner, replyStatus: { error: err.message } });
+        results.push({
+          number: winner.number,
+          commentId: winner.commentId,
+          originalMessage: winner.message,
+          from: winner.from,
+          replyStatus: { error: err.message }
+        });
         await delay(3000);
       }
     }
 
-    const list = winners.map(w => `- @[${w.from.id}](${w.from.name}) ${w.number}`).join('\n');
+    const list = winners.map(w => {
+      if (w.from?.id && w.from?.name) {
+        return `- @[${w.from.id}](${w.from.name}) ${w.number}`;
+      } else {
+        return `- 第一个留言 ${w.number}`;
+      }
+    }).join('\n');
+
     const summaryMessage = `🎉🎊 本场直播抽奖结果 🎉🎊\n系统已自动回复中奖者：\n${list}\n⚠️ 请查看你的号码下是否有回复！⚠️\n⚠️ 只限今天直播兑现，逾期无效 ⚠️`;
 
     const postCommentRes = await fetch(`https://graph.facebook.com/${postId}/comments?access_token=${PAGE_TOKEN}`, {
@@ -124,7 +138,6 @@ export default async function handler(req, res) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: summaryMessage })
     });
-
     const postCommentData = await postCommentRes.json();
 
     if (DEBUG) {
@@ -139,6 +152,7 @@ export default async function handler(req, res) {
     }
 
     return res.status(200).json({ success: true, postId, replied: results });
+
   } catch (err) {
     console.error('抽奖失败:', err);
     return res.status(500).json({ error: '服务器错误', details: err.message });
