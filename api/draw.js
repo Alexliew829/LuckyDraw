@@ -44,16 +44,16 @@ export default async function handler(req, res) {
     for (const comment of allComments) {
       const msg = comment.message || '';
       const match = msg.match(regex);
-      const isAdmin = comment.from?.id === PAGE_ID;
-      if (!match || isAdmin) continue;
+      const userId = comment.from?.id;
+      const userName = comment.from?.name;
+
+      if (!match || userId === PAGE_ID) continue;
 
       const number = match[1].padStart(2, '0');
-      const userId = comment.from?.id || comment.id; // 若抓不到 ID，用 comment.id 区分匿名
-      const userName = comment.from?.name || '匿名用户';
 
       validEntries.push({
         commentId: comment.id,
-        from: { id: userId, name: userName },
+        from: userId ? { id: userId, name: userName } : null,
         number,
         message: msg,
       });
@@ -80,9 +80,9 @@ export default async function handler(req, res) {
     for (const entry of shuffle(validEntries)) {
       const uid = entry.from?.id;
       const number = entry.number;
-      if (usedIds.has(uid) || usedNumbers.has(number)) continue;
+      if ((uid && usedIds.has(uid)) || usedNumbers.has(number)) continue;
       winners.push(entry);
-      usedIds.add(uid);
+      if (uid) usedIds.add(uid);
       usedNumbers.add(number);
       if (winners.length === 3) break;
     }
@@ -106,27 +106,22 @@ export default async function handler(req, res) {
           body: JSON.stringify({ message: replyMessage })
         });
         const replyData = await replyRes.json();
-        results.push({
-          number: winner.number,
-          commentId: winner.commentId,
-          originalMessage: winner.message,
-          from: winner.from,
-          replyStatus: replyData
-        });
+        results.push({ ...winner, replyStatus: replyData });
         await delay(3000);
       } catch (err) {
-        results.push({
-          number: winner.number,
-          commentId: winner.commentId,
-          originalMessage: winner.message,
-          from: winner.from,
-          replyStatus: { error: err.message }
-        });
+        results.push({ ...winner, replyStatus: { error: err.message } });
         await delay(3000);
       }
     }
 
-    const list = winners.map(w => `- ${w.from.name === '匿名用户' ? '匿名用户' : `@[${w.from.id}](${w.from.name})`} ${w.number}`).join('\n');
+    const list = winners.map(w => {
+      if (w.from?.id && w.from?.name) {
+        return `- @[${w.from.id}](${w.from.name}) ${w.number}`;
+      } else {
+        return `- ${w.number}`;
+      }
+    }).join('\n');
+
     const summaryMessage = `🎉🎊 本场直播抽奖结果 🎉🎊\n系统已自动回复中奖者：\n${list}\n⚠️ 请查看你的号码下是否有回复！⚠️\n⚠️ 只限今天直播兑现，逾期无效 ⚠️`;
 
     const postCommentRes = await fetch(`https://graph.facebook.com/${postId}/comments?access_token=${PAGE_TOKEN}`, {
