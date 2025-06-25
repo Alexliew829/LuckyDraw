@@ -17,9 +17,10 @@ export default async function handler(req, res) {
       postId = postData.data[0].id;
     }
 
+    // 提示是否重复抽奖（仅限非 debug）
     if (!DEBUG && postId === lastDrawPostId) {
       return res.status(200).json({
-        warning: '⚠️ 本场可能已抽奖一次，是否确认再次抽奖？',
+        warning: '⚠️ 本场已抽奖一次，是否确认再次抽奖？',
         confirm: true
       });
     }
@@ -38,6 +39,7 @@ export default async function handler(req, res) {
     const ONE_HOUR_AGO = Date.now() - 60 * 60 * 1000;
     const regex = /([1-9][0-9]?)/;
     const validEntries = [];
+    const seenUserIds = new Set();
 
     for (const comment of allComments) {
       const msg = comment.message || '';
@@ -47,9 +49,10 @@ export default async function handler(req, res) {
       const createdTime = new Date(comment.created_time).getTime();
 
       if (createdTime < ONE_HOUR_AGO) continue;
-      if (!match || userId === PAGE_ID) continue;
+      if (!match || userId === PAGE_ID || seenUserIds.has(userId)) continue;
 
       const number = match[1].padStart(2, '0');
+      seenUserIds.add(userId);
 
       validEntries.push({
         commentId: comment.id,
@@ -79,10 +82,9 @@ export default async function handler(req, res) {
     const usedNumbers = new Set();
 
     for (const entry of shuffledEntries) {
-      const uid = entry.from.id;
-      if (usedUserIds.has(uid) || usedNumbers.has(entry.number)) continue;
+      if (usedUserIds.has(entry.from.id) || usedNumbers.has(entry.number)) continue;
       winners.push(entry);
-      usedUserIds.add(uid);
+      usedUserIds.add(entry.from.id);
       usedNumbers.add(entry.number);
       if (winners.length === 3) break;
     }
@@ -106,22 +108,10 @@ export default async function handler(req, res) {
           body: JSON.stringify({ message: replyMessage })
         });
         const replyData = await replyRes.json();
-        results.push({
-          number: winner.number,
-          commentId: winner.commentId,
-          originalMessage: winner.message,
-          from: winner.from,
-          replyStatus: replyData
-        });
+        results.push({ ...winner, replyStatus: replyData });
         await delay(3000);
       } catch (err) {
-        results.push({
-          number: winner.number,
-          commentId: winner.commentId,
-          originalMessage: winner.message,
-          from: winner.from,
-          replyStatus: { error: err.message }
-        });
+        results.push({ ...winner, replyStatus: { error: err.message } });
         await delay(3000);
       }
     }
@@ -134,6 +124,7 @@ export default async function handler(req, res) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: summaryMessage })
     });
+
     const postCommentData = await postCommentRes.json();
 
     if (DEBUG) {
@@ -148,7 +139,6 @@ export default async function handler(req, res) {
     }
 
     return res.status(200).json({ success: true, postId, replied: results });
-
   } catch (err) {
     console.error('抽奖失败:', err);
     return res.status(500).json({ error: '服务器错误', details: err.message });
