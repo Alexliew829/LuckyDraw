@@ -34,18 +34,27 @@
 
   <script>
     const drawBtn = document.getElementById("drawBtn");
-    const DRAW_URL = "/api/draw"; // 当前域名即可
     const DRAWN_KEY = "drawnOnce";
 
-    async function runDraw() {
+    async function runDraw(useDebug = false) {
       drawBtn.disabled = true;
       drawBtn.textContent = "抽奖中...";
 
       try {
-        const res = await fetch(DRAW_URL);
+        const url = useDebug ? "/api/draw?debug=true" : "/api/draw";
+        const res = await fetch(url);
         const data = await res.json();
 
-        if (res.ok) {
+        if (res.ok && data?.alreadyDrawn) {
+          const confirmAgain = confirm("⚠️ 本场已抽奖一次，是否确认再次抽奖？");
+          if (confirmAgain) {
+            return await runDraw(true); // 第二次点击带 debug 再抽
+          } else {
+            return;
+          }
+        }
+
+        if (res.ok && data?.success) {
           alert("🎉 抽奖完成，系统将自动回复中奖者");
           localStorage.setItem(DRAWN_KEY, "yes");
         } else {
@@ -59,13 +68,8 @@
       }
     }
 
-    drawBtn.addEventListener("click", async () => {
-      const drawn = localStorage.getItem(DRAWN_KEY);
-      if (drawn === "yes") {
-        const confirmAgain = confirm("⚠️ 本场已抽奖一次，是否确认再次抽奖？");
-        if (!confirmAgain) return;
-      }
-      await runDraw();
+    drawBtn.addEventListener("click", () => {
+      runDraw();
     });
   </script>
 </body>
