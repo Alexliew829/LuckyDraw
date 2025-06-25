@@ -23,6 +23,7 @@
       border: none;
       border-radius: 16px;
       box-shadow: 2px 2px 12px rgba(0,0,0,0.2);
+      cursor: pointer;
     }
   </style>
 </head>
@@ -33,23 +34,24 @@
 
   <script>
     const drawBtn = document.getElementById("drawBtn");
-    const DRAW_URL = "https://lucky-draw-delta-two.vercel.app/api/draw";
-    const LAST_KEY = "hasDrawn";
+    const DRAW_URL = "/api/draw"; // 当前域名即可
+    const DRAWN_KEY = "drawnOnce";
 
-    async function drawLottery() {
+    async function runDraw() {
       drawBtn.disabled = true;
       drawBtn.textContent = "抽奖中...";
 
       try {
         const res = await fetch(DRAW_URL);
+        const data = await res.json();
+
         if (res.ok) {
-          alert("🎉 抽奖完成，系统已自动公布结果！");
-          localStorage.setItem(LAST_KEY, "true");
+          alert("🎉 抽奖完成，系统将自动回复中奖者");
+          localStorage.setItem(DRAWN_KEY, "yes");
         } else {
-          const err = await res.json();
-          alert("❌ 抽奖失败：" + (err?.error || "请稍后再试"));
+          alert("❌ 抽奖失败：" + (data?.error || "请稍后再试"));
         }
-      } catch (e) {
+      } catch (err) {
         alert("⚠️ 网络错误，请检查网络连接");
       } finally {
         drawBtn.disabled = false;
@@ -58,12 +60,12 @@
     }
 
     drawBtn.addEventListener("click", async () => {
-      const hasDrawn = localStorage.getItem(LAST_KEY);
-      if (hasDrawn) {
-        const confirmDraw = confirm("⚠️ 本场已抽奖一次，是否确认再次抽奖？");
-        if (!confirmDraw) return;
+      const drawn = localStorage.getItem(DRAWN_KEY);
+      if (drawn === "yes") {
+        const confirmAgain = confirm("⚠️ 本场已抽奖一次，是否确认再次抽奖？");
+        if (!confirmAgain) return;
       }
-      await drawLottery();
+      await runDraw();
     });
   </script>
 </body>
