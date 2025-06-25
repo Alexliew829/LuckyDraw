@@ -15,7 +15,6 @@ export default async function handler(req, res) {
       postId = postData.data[0].id;
     }
 
-    // 检查是否已经抽过奖（根据贴文是否已有中奖公告）
     const summaryCheckRes = await fetch(`https://graph.facebook.com/${postId}/comments?access_token=${PAGE_TOKEN}&limit=100`);
     const summaryCheckData = await summaryCheckRes.json();
     const alreadyDrawn = summaryCheckData.data?.some(c =>
@@ -45,12 +44,12 @@ export default async function handler(req, res) {
     for (const comment of allComments) {
       const msg = comment.message || '';
       const match = msg.match(regex);
-      const userId = comment.from?.id;
-      const userName = comment.from?.name;
-
-      if (!match || !userId || userId === PAGE_ID) continue;
+      const isAdmin = comment.from?.id === PAGE_ID;
+      if (!match || isAdmin) continue;
 
       const number = match[1].padStart(2, '0');
+      const userId = comment.from?.id || comment.id; // 若抓不到 ID，用 comment.id 区分匿名
+      const userName = comment.from?.name || '匿名用户';
 
       validEntries.push({
         commentId: comment.id,
@@ -127,7 +126,7 @@ export default async function handler(req, res) {
       }
     }
 
-    const list = winners.map(w => `- @[${w.from.id}](${w.from.name}) ${w.number}`).join('\n');
+    const list = winners.map(w => `- ${w.from.name === '匿名用户' ? '匿名用户' : `@[${w.from.id}](${w.from.name})`} ${w.number}`).join('\n');
     const summaryMessage = `🎉🎊 本场直播抽奖结果 🎉🎊\n系统已自动回复中奖者：\n${list}\n⚠️ 请查看你的号码下是否有回复！⚠️\n⚠️ 只限今天直播兑现，逾期无效 ⚠️`;
 
     const postCommentRes = await fetch(`https://graph.facebook.com/${postId}/comments?access_token=${PAGE_TOKEN}`, {
