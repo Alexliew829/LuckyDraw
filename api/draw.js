@@ -27,19 +27,20 @@ export default async function handler(req, res) {
 
     const validEntries = [];
     const regex = /([1-9][0-9]?)/;
+
     for (const comment of allComments) {
       const msg = comment.message || '';
       const match = msg.match(regex);
-      const userId = comment.from?.id || null;
-      const userName = comment.from?.name || null;
+      const userId = comment.from?.id;
+      const userName = comment.from?.name || '';
 
-      if (!match || userId === PAGE_ID) continue;
+      if (!match || !userId || userId === PAGE_ID) continue;
 
       const number = match[1].padStart(2, '0');
 
       validEntries.push({
         commentId: comment.id,
-        from: userId ? { id: userId, name: userName } : null,
+        from: { id: userId, name: userName },
         number,
         message: msg,
       });
@@ -64,7 +65,7 @@ export default async function handler(req, res) {
     const usedNumbers = new Set();
 
     for (const entry of shuffle(validEntries)) {
-      const uid = entry.from?.id || entry.commentId;
+      const uid = entry.from.id;
       if (usedIds.has(uid)) continue;
       if (usedNumbers.has(entry.number)) continue;
 
@@ -79,14 +80,13 @@ export default async function handler(req, res) {
     }
 
     const replyMessage = `🎉🎊 恭喜你获得折扣卷 RM100.00 🎉🎊\n🎉🎉 Congratulations! You’ve won a RM100 discount voucher! 🎉🎉\n⚠️⚠️ 只限今天直播兑现，逾期无效 ⚠️⚠️\n⚠️⚠️ Valid only during today’s live stream. ⚠️⚠️\n❌❌ 不得转让 ❌❌\n❌❌ Non-transferable ❌❌`;
+
     const results = [];
 
-    // 延迟函数
     function delay(ms) {
       return new Promise(resolve => setTimeout(resolve, ms));
     }
 
-    // 安全节流留言回复
     for (const winner of winners) {
       try {
         const replyRes = await fetch(`https://graph.facebook.com/${winner.commentId}/comments?access_token=${PAGE_TOKEN}`, {
@@ -102,7 +102,7 @@ export default async function handler(req, res) {
           from: winner.from,
           replyStatus: replyData
         });
-        await delay(3000); // 每条留言间隔 3 秒
+        await delay(3000);
       } catch (err) {
         results.push({
           number: winner.number,
