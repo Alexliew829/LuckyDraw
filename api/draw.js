@@ -19,7 +19,6 @@ export default async function handler(req, res) {
       postId = postData.data[0].id;
     }
 
-    // 若已抽奖且非 debug 模式
     if (!DEBUG && lastDrawPostId === postId) {
       return res.status(200).json({ alreadyDrawn: true });
     }
@@ -35,21 +34,23 @@ export default async function handler(req, res) {
     }
 
     const validEntries = [];
-    const regex = /([1-9][0-9]?)/;
+    const regex = /(\d{1,3})/;
 
     for (const comment of allComments) {
       const msg = comment.message || '';
       const match = msg.match(regex);
-      const userId = comment.from?.id;
-      const userName = comment.from?.name || '';
-
-      if (!match || !userId || userId === PAGE_ID) continue;
+      if (!match) continue;
 
       const number = match[1].padStart(2, '0');
+      const numValue = parseInt(number);
+      if (numValue < 1 || numValue > 99) continue;
+
+      const userId = comment.from?.id || null;
+      const userName = comment.from?.name || null;
 
       validEntries.push({
         commentId: comment.id,
-        from: { id: userId, name: userName },
+        from: userId ? { id: userId, name: userName } : null,
         number,
         message: msg,
       });
@@ -77,7 +78,7 @@ export default async function handler(req, res) {
     const usedNumbers = new Set();
 
     for (const entry of shuffle(validEntries)) {
-      const uid = entry.from.id;
+      const uid = entry.from?.id || entry.commentId;
       if (usedIds.has(uid)) continue;
       if (usedNumbers.has(entry.number)) continue;
 
@@ -123,7 +124,7 @@ export default async function handler(req, res) {
           replyStatus: replyData
         });
 
-        console.log(`✅ 已回复 ${winner.from.name}:`, replyData);
+        console.log(`✅ 已回复 ${winner.from?.name || '匿名用户'}:`, replyData);
         await delay(3000);
 
       } catch (err) {
@@ -134,12 +135,19 @@ export default async function handler(req, res) {
           from: winner.from,
           replyStatus: { error: err.message }
         });
-        console.warn(`❌ 回复失败 (${winner.from.name})：`, err.message);
+        console.warn(`❌ 回复失败 (${winner.from?.name || '匿名用户'})：`, err.message);
         await delay(3000);
       }
     }
 
-    const list = winners.map(w => `- @[${w.from.id}](${w.from.name}) ${w.number}`).join('\n');
+    const list = winners.map(w => {
+      if (w.from?.id && w.from?.name) {
+        return `- @[${w.from.id}](${w.from.name}) ${w.number}`;
+      } else {
+        return `- 第一个留言 ${w.number}`;
+      }
+    }).join('\n');
+
     const summaryMessage = `🎉🎊 本场直播抽奖结果 🎉🎊\n系统已自动回复中奖者：\n${list}\n⚠️ 请查看你的号码下是否有回复！⚠️\n⚠️ 只限今天直播兑现，逾期无效 ⚠️`;
 
     await fetch(`https://graph.facebook.com/${postId}/comments?access_token=${PAGE_TOKEN}`, {
@@ -148,7 +156,6 @@ export default async function handler(req, res) {
       body: JSON.stringify({ message: summaryMessage })
     });
 
-    // ✅ 记录本次抽奖
     lastDrawPostId = postId;
     lastDrawTime = Date.now();
 
