@@ -1,5 +1,3 @@
-let lastDrawPostId = null;
-
 export default async function handler(req, res) {
   const PAGE_ID = process.env.PAGE_ID;
   const PAGE_TOKEN = process.env.FB_ACCESS_TOKEN;
@@ -17,14 +15,6 @@ export default async function handler(req, res) {
       postId = postData.data[0].id;
     }
 
-    if (!DEBUG && postId === lastDrawPostId) {
-      return res.status(200).json({
-        warning: '⚠️ 本场可能已抽奖一次，是否确认再次抽奖？',
-        confirm: true
-      });
-    }
-    lastDrawPostId = postId;
-
     const allComments = [];
     let nextPage = `https://graph.facebook.com/${postId}/comments?access_token=${PAGE_TOKEN}&fields=id,message,from,created_time&limit=100`;
 
@@ -36,9 +26,9 @@ export default async function handler(req, res) {
     }
 
     const ONE_HOUR_AGO = Date.now() - 60 * 60 * 1000;
-
-    const validEntries = [];
     const regex = /([1-9][0-9]?)/;
+    const validEntries = [];
+
     for (const comment of allComments) {
       const msg = comment.message || '';
       const match = msg.match(regex);
@@ -80,9 +70,7 @@ export default async function handler(req, res) {
 
     for (const entry of shuffledEntries) {
       const uid = entry.from.id;
-      if (usedUserIds.has(uid)) continue;
-      if (usedNumbers.has(entry.number)) continue;
-
+      if (usedUserIds.has(uid) || usedNumbers.has(entry.number)) continue;
       winners.push(entry);
       usedUserIds.add(uid);
       usedNumbers.add(entry.number);
@@ -124,13 +112,11 @@ export default async function handler(req, res) {
           from: winner.from,
           replyStatus: { error: err.message }
         });
-        console.warn('留言失败，已跳过：', err.message);
         await delay(3000);
       }
     }
 
     const list = winners.map(w => `- @[${w.from.id}](${w.from.name}) ${w.number}`).join('\n');
-
     const summaryMessage = `🎉🎊 本场直播抽奖结果 🎉🎊\n系统已自动回复中奖者：\n${list}\n⚠️ 请查看你的号码下是否有回复！⚠️\n⚠️ 只限今天直播兑现，逾期无效 ⚠️`;
 
     const postCommentRes = await fetch(`https://graph.facebook.com/${postId}/comments?access_token=${PAGE_TOKEN}`, {
@@ -152,6 +138,7 @@ export default async function handler(req, res) {
     }
 
     return res.status(200).json({ success: true, postId, replied: results });
+
   } catch (err) {
     console.error('抽奖失败:', err);
     return res.status(500).json({ error: '服务器错误', details: err.message });
