@@ -55,6 +55,9 @@ export default async function handler(req, res) {
       });
     }
 
+    console.log('总共筛选出留言：', validEntries.length);
+    console.log('留言访客名单：', validEntries.map(v => v.from));
+
     if (validEntries.length < 3 && !DEBUG) {
       return res.status(400).json({ error: '有效用户留言不足 3 条（可能是管理员或留言无数字）', total: validEntries.length });
     }
