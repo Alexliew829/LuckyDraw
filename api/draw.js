@@ -1,20 +1,16 @@
-// api/draw.js
-import { initializeApp, cert, getApps } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
-
-const serviceAccount = JSON.parse(process.env.FIREBASE_ADMIN_KEY);
-if (!getApps().length) {
-  initializeApp({ credential: cert(serviceAccount) });
-}
-
-const db = getFirestore();
-
 export default async function handler(req, res) {
   const DEBUG = req.query.debug !== undefined;
 
   try {
-    const snapshot = await db.collection('draw_comments').get();
-    const allEntries = snapshot.docs.map(doc => doc.data());
+    // 模拟留言数据（你要用自己的留言来源替代这部分）
+    const mockComments = [
+      { comment_id: 'c1', message: '我要88', user_id: '111', user_name: 'Alex', number: '88' },
+      { comment_id: 'c2', message: '我选50', user_id: '222', user_name: 'Ben', number: '50' },
+      { comment_id: 'c3', message: 'B01中我了', user_id: '333', user_name: 'Sky', number: '1' },
+      // 可添加更多模拟数据
+    ];
+
+    const allEntries = mockComments; // 实际中请替换为你系统传来的留言数据
 
     // 筛选有效留言：1~99 号码，去除重复 user 和重复号码
     const validEntries = [];
@@ -23,7 +19,7 @@ export default async function handler(req, res) {
 
     for (const entry of allEntries) {
       const { user_id, number } = entry;
-      const uid = user_id || entry.comment_id; // 匿名用户 fallback
+      const uid = user_id || entry.comment_id; // 匿名 fallback
 
       const numValue = parseInt(number);
       if (isNaN(numValue) || numValue < 1 || numValue > 99) continue;
