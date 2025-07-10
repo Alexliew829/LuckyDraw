@@ -11,7 +11,7 @@ export default async function handler(req, res) {
   try {
     let postId = POST_ID;
     if (!postId) {
-      const postRes = await fetch(`https://graph.facebook.com/${PAGE_ID}/posts?access_token=${PAGE_TOKEN}&limit=5`);
+      const postRes = await fetch(`https://graph.facebook.com/${PAGE_ID}/videos?access_token=${PAGE_TOKEN}&limit=5`);
       const postData = await postRes.json();
       if (!postData?.data?.length) {
         return res.status(404).json({ error: '找不到贴文（API 返回空）', raw: postData });
