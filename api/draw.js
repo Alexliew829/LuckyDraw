@@ -11,12 +11,23 @@ export default async function handler(req, res) {
   try {
     let postId = POST_ID;
     if (!postId) {
-      const postRes = await fetch(`https://graph.facebook.com/${PAGE_ID}/videos?access_token=${PAGE_TOKEN}&limit=5`);
-      const postData = await postRes.json();
-      if (!postData?.data?.length) {
-        return res.status(404).json({ error: '找不到贴文（API 返回空）', raw: postData });
+      const videoRes = await fetch(`https://graph.facebook.com/${PAGE_ID}/videos?access_token=${PAGE_TOKEN}&limit=5`);
+      const videoData = await videoRes.json();
+      if (!videoData?.data?.length) {
+        return res.status(404).json({ error: '找不到视频（API 返回空）', raw: videoData });
       }
-      postId = postData.data[0].id;
+
+      const videoId = videoData.data[0].id;
+      const detailRes = await fetch(`https://graph.facebook.com/${videoId}?fields=permalink_url&access_token=${PAGE_TOKEN}`);
+      const detailData = await detailRes.json();
+      const permalink = detailData.permalink_url;
+
+      if (!permalink || !permalink.includes('/videos/')) {
+        return res.status(404).json({ error: '无法解析贴文 ID（permalink_url 无效）', raw: detailData });
+      }
+
+      const parsedId = permalink.split('/videos/')[1];
+      postId = parsedId?.split(/[/?]/)[0]; // 清除后缀参数
     }
 
     if (!DEBUG && lastDrawPostId === postId) {
